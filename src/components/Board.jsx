@@ -8,6 +8,7 @@ const Board = () => {
     const [hexSize, setHexSize] = useState(60); // Default hex size
     const [hoveredIntersection, setHoveredIntersection] = useState(null);
     const [selectedIntersection, setSelectedIntersection] = useState(null);
+    const [selectedRoad, setSelectedRoad] = useState(null);
     const svgRef = useRef(null);
 
     // Center the board constants
@@ -26,18 +27,25 @@ const Board = () => {
         setPorts(ports);
         setHoveredIntersection(null);
         setSelectedIntersection(null);
+        setSelectedRoad(null);
     };
 
     const handleIntersectionClick = (intersection) => {
         if (selectedIntersection && selectedIntersection.id === intersection.id) {
             setSelectedIntersection(null);
+            setSelectedRoad(null);
         } else {
             setSelectedIntersection(intersection);
+            setSelectedRoad(null);
         }
     };
 
+    const handleRoadClick = (road) => {
+        setSelectedRoad(road);
+    };
+
     const shareToX = async () => {
-        if (!selectedIntersection || !svgRef.current) return;
+        if (!selectedIntersection || !selectedRoad || !svgRef.current) return;
 
         try {
             const svgElement = svgRef.current;
@@ -152,6 +160,34 @@ const Board = () => {
 
     }, [hexes, hexSize]);
 
+    // Calculate candidate roads based on selected intersection
+    const candidateRoads = useMemo(() => {
+        if (!selectedIntersection) return [];
+
+        const roads = [];
+        const { x: x1, y: y1 } = selectedIntersection;
+
+        intersections.forEach(target => {
+            if (target.id === selectedIntersection.id) return;
+
+            // Check distance (should be equal to hexSize)
+            const dist = Math.hypot(target.x - x1, target.y - y1);
+
+            // Allow small float tolerance
+            if (Math.abs(dist - hexSize) < 2.0) {
+                roads.push({
+                    id: `${Math.min(selectedIntersection.id, target.id)}-${Math.max(selectedIntersection.id, target.id)}`,
+                    target,
+                    x1: centerX + x1,
+                    y1: centerY + y1,
+                    x2: centerX + target.x,
+                    y2: centerY + target.y
+                });
+            }
+        });
+        return roads;
+    }, [selectedIntersection, intersections, hexSize, centerX, centerY]);
+
     // Calculate Port Positions and Rendering
     const renderedPorts = useMemo(() => {
         return ports.map((port, index) => {
@@ -227,14 +263,22 @@ const Board = () => {
     // Mobile Responsiveness: Removed manual scale logic in favor of SVG viewBox
 
     // Tooltip State with Position
-    const [tooltipData, setTooltipData] = useState(null); // { content: intersection, x: 0, y: 0 }
+    // Tooltip State (Removed floating popup in favor of fixed area)
+    // We will use 'hoveredIntersection' or 'selectedIntersection' to show data below the board
+
+    // Mobile Responsiveness: Adjusted viewBox to zoom in (crop top/bottom empty space)
+    // Original: 0 0 800 650 -> New: 0 25 800 600 (approx)
+    // Actually, let's keep width 800 but reduce height to "zoom" if we fit to width.
+    // Or just increase hexSize initial state if we want "larger" relative to screen.
+    // But user asked to "zoom in", so let's tighten the viewBox.
+    const viewBox = `0 40 800 560`; // Crop top/bottom unused space
 
     const handleMouseEnter = (e, intersection) => {
-        const rect = e.target.getBoundingClientRect();
-        // Calculate center of the target element relative to the viewport
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2; // Bottom of element? Or Center. Center is better.
-        setTooltipData({ intersection, x, y });
+        setHoveredIntersection(intersection);
+    };
+
+    const handleMouseLeave = () => {
+        setHoveredIntersection(null);
     };
 
     return (
@@ -275,7 +319,7 @@ const Board = () => {
             }}>
                 <svg
                     ref={svgRef}
-                    viewBox={`0 0 ${width} ${height}`}
+                    viewBox={viewBox}
                     style={{
                         width: '100%',
                         height: 'auto',
@@ -366,27 +410,54 @@ const Board = () => {
                     {/* Render Ports */}
                     {renderedPorts}
 
+                    {/* Candidate/Selected Roads (Render BEFORE intersections so dots are on top) */}
+                    {candidateRoads.map(road => {
+                        const isSelected = selectedRoad && selectedRoad.id === road.id;
+                        return (
+                            <line
+                                key={road.id}
+                                x1={road.x1} y1={road.y1}
+                                x2={road.x2} y2={road.y2}
+                                stroke={isSelected ? "#d32f2f" : "rgba(255, 255, 255, 0.8)"}
+                                strokeWidth={isSelected ? 8 : 6}
+                                strokeLinecap="round"
+                                strokeDasharray={isSelected ? "none" : "10, 8"}
+                                style={{
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    filter: isSelected ? 'drop-shadow(0 0 3px rgba(0,0,0,0.5))' : 'none'
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Prevent board click if any
+                                    handleRoadClick(road);
+                                }}
+                            >
+                                {/* Make hit area larger for easier mobile tapping */}
+                            </line>
+                        );
+                    })}
+
                     {/* Render Intersections */}
                     {intersections.map((v) => (
                         <circle
                             key={v.id}
                             cx={centerX + v.x}
                             cy={centerY + v.y}
-                            r={8}
+                            r={10} // Increased hit area visual size slightly
                             fill={
                                 (selectedIntersection && selectedIntersection.id === v.id) ? "#ffeb3b" :
-                                    (tooltipData && tooltipData.intersection.id === v.id) ? "#fff" : "rgba(255,255,255,0.2)"
+                                    (hoveredIntersection && hoveredIntersection.id === v.id) ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)"
                             }
                             stroke={
                                 (selectedIntersection && selectedIntersection.id === v.id) ? "#d32f2f" :
-                                    (tooltipData && tooltipData.intersection.id === v.id) ? "#000" : "none"
+                                    (hoveredIntersection && hoveredIntersection.id === v.id) ? "#fff" : "none"
                             }
                             strokeWidth={
                                 (selectedIntersection && selectedIntersection.id === v.id) ? 4 : 2
                             }
                             style={{ cursor: 'pointer', transition: 'all 0.2s', touchAction: 'none' }}
                             onMouseEnter={(e) => handleMouseEnter(e, v)}
-                            onMouseLeave={() => setTooltipData(null)}
+                            onMouseLeave={handleMouseLeave}
                             onClick={() => handleIntersectionClick(v)}
                             onTouchStart={(e) => handleMouseEnter(e, v)} // Mobile touch support
                         />
@@ -404,60 +475,114 @@ const Board = () => {
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        gap: '10px'
+                        gap: '10px',
+                        width: '90%'
                     }}>
-                        <button
-                            onClick={shareToX}
-                            style={{
-                                background: '#1DA1F2',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '30px',
+                        {!selectedRoad ? (
+                            <div style={{
+                                background: 'rgba(30, 30, 30, 0.9)',
+                                color: '#fff',
                                 padding: '12px 24px',
+                                borderRadius: '30px',
                                 fontSize: '16px',
                                 fontWeight: 'bold',
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px'
-                            }}
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                            </svg>
-                            選択位置をシェア (X)
-                        </button>
+                                border: '1px solid #d32f2f',
+                                animation: 'pulse 2s infinite'
+                            }}>
+                                次は「道」を選択してください
+                            </div>
+                        ) : (
+                            <button
+                                onClick={shareToX}
+                                style={{
+                                    background: '#1DA1F2',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '30px',
+                                    padding: '12px 24px',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                                </svg>
+                                決定してシェア (X)
+                            </button>
+                        )}
                     </div>
                 )}
 
-                {/* Tooltip (Fixed/Absolute Positioning) */}
-                {tooltipData && (
+                {/* Fixed Information Area (Bottom) - Replaces Tooltip */}
+                <div style={{
+                    position: 'fixed',
+                    bottom: '90px', // Above the floating action button
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '90%',
+                    maxWidth: '600px',
+                    pointerEvents: 'none', // Allow clicking through if necessary, but usually this is background
+                    zIndex: 1500,
+                    display: (hoveredIntersection || selectedIntersection) ? 'block' : 'none'
+                }}>
                     <div style={{
-                        position: 'fixed', // Use fixed to be relative to screen
-                        top: Math.max(10, tooltipData.y - 120), // Prevent off-screen top
-                        left: Math.max(10, Math.min(window.innerWidth - 170, tooltipData.x - 80)), // Centered horizontally, clamped
                         background: 'rgba(255, 255, 255, 0.95)',
-                        color: '#333',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        pointerEvents: 'none',
-                        zIndex: 1000,
-                        textAlign: 'left',
-                        minWidth: '160px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                        border: '1px solid #ddd'
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                        backdropFilter: 'blur(5px)',
+                        border: '1px solid rgba(255,255,255,0.8)',
+                        textAlign: 'left'
                     }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                            確率の合計: <span style={{ fontSize: '1.2em', color: '#d32f2f' }}>{tooltipData.intersection.totalDots}</span>
-                        </div>
-                        {Object.entries(tooltipData.intersection.resourceCounts).map(([res, count]) => (
-                            <div key={res} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: RESOURCE_COLORS[res], border: '1px solid #999' }}></div>
-                                <span style={{ fontSize: '13px' }}>{RESOURCE_NAMES_JP[res]} x{count}</span>
-                            </div>
-                        ))}
+                        {(selectedIntersection || hoveredIntersection) && (
+                            <>
+                                {(() => {
+                                    const target = selectedIntersection || hoveredIntersection;
+                                    return (
+                                        <>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                marginBottom: '8px',
+                                                borderBottom: '1px solid #eee',
+                                                paddingBottom: '4px'
+                                            }}>
+                                                <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#555' }}>
+                                                    {selectedIntersection ? "選択中" : "プレビュー"}
+                                                </span>
+                                                <span style={{ fontWeight: 'bold', fontSize: '1.4em', color: '#d32f2f' }}>
+                                                    ★ {target.totalDots}
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                {Object.entries(target.resourceCounts).map(([res, count]) => (
+                                                    <div key={res} style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        background: '#eee',
+                                                        padding: '4px 8px',
+                                                        borderRadius: '15px'
+                                                    }}>
+                                                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: RESOURCE_COLORS[res], border: '1px solid #999' }}></div>
+                                                        <span style={{ fontSize: '13px', fontWeight: '500' }}>{RESOURCE_NAMES_JP[res]} x{count}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
             <div style={{ marginTop: '30px', background: '#f9f9f9', padding: '20px', borderRadius: '8px', maxWidth: '800px', margin: '30px auto', boxSizing: 'border-box' }}>
