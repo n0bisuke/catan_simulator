@@ -1,8 +1,15 @@
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
+  /* Reduced padding for mobile by default */
   text-align: center;
+}
+
+@media (min-width: 600px) {
+  #root {
+    padding: 2rem;
+  }
 }
 
 .App {
@@ -30,5 +37,5 @@ svg {
   display: block;
   margin: 0 auto;
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }

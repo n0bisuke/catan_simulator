@@ -18,6 +18,7 @@ a {
   color: #646cff;
   text-decoration: inherit;
 }
+
 a:hover {
   color: #535bf2;
 }
@@ -26,8 +27,24 @@ body {
   margin: 0;
   display: flex;
   place-items: center;
+  /* This centers vertically which might be annoying on mobile if content is long. */
+  justify-content: center;
+  /* Center horizontally */
   min-width: 320px;
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+  /* Prevent horizontal scroll */
+  background-color: #242424;
+}
+
+/* Ensure content flows naturally on smaller screens */
+@media (max-width: 600px) {
+  body {
+    place-items: flex-start;
+    /* Align top on mobile to avoid cutting off top content */
+    padding-top: 20px;
+  }
 }
 
 h1 {
@@ -46,9 +63,11 @@ button {
   cursor: pointer;
   transition: border-color 0.25s;
 }
+
 button:hover {
   border-color: #646cff;
 }
+
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
@@ -59,9 +78,11 @@ button:focus-visible {
     color: #213547;
     background-color: #ffffff;
   }
+
   a:hover {
     color: #747bff;
   }
+
   button {
     background-color: #f9f9f9;
   }

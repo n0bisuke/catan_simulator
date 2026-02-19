@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { generateBoard, RESOURCE_COLORS, RESOURCES, PROBABILITIES, RESOURCE_NAMES_JP, RESOURCE_ICONS } from '../utils/boardUtils';
 import Hex from './Hex';
 
@@ -7,6 +7,8 @@ const Board = () => {
     const [ports, setPorts] = useState([]); // Randomized ports
     const [hexSize, setHexSize] = useState(60); // Default hex size
     const [hoveredIntersection, setHoveredIntersection] = useState(null);
+    const [selectedIntersection, setSelectedIntersection] = useState(null);
+    const svgRef = useRef(null);
 
     // Center the board constants
     const width = 800;
@@ -23,6 +25,79 @@ const Board = () => {
         setHexes(board);
         setPorts(ports);
         setHoveredIntersection(null);
+        setSelectedIntersection(null);
+    };
+
+    const handleIntersectionClick = (intersection) => {
+        if (selectedIntersection && selectedIntersection.id === intersection.id) {
+            setSelectedIntersection(null);
+        } else {
+            setSelectedIntersection(intersection);
+        }
+    };
+
+    const shareToX = async () => {
+        if (!selectedIntersection || !svgRef.current) return;
+
+        try {
+            const svgElement = svgRef.current;
+            const serializer = new XMLSerializer();
+            let svgString = serializer.serializeToString(svgElement);
+
+            // Create canvas
+            const scale = 2;
+            const canvas = document.createElement('canvas');
+            canvas.width = width * scale;
+            canvas.height = height * scale;
+            const ctx = canvas.getContext('2d');
+
+            // Fill white background (otherwise transparent)
+            ctx.fillStyle = "#4fa4b8"; // Match SVG background
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const img = new Image();
+            // Create a Blob for the SVG to handle encoding issues
+            const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svgBlob);
+
+            img.onload = async () => {
+                ctx.drawImage(img, 0, 0, width * scale, height * scale);
+
+                canvas.toBlob(async (blob) => {
+                    if (blob) {
+                        const file = new File([blob], 'catan-setup.png', { type: 'image/png' });
+                        const text = `ここからスタートします！\n確率: ${selectedIntersection.totalDots}\n資源: ${selectedIntersection.resources.map(r => RESOURCE_NAMES_JP[r]).join(', ')}\n#カタン #CatanSimulator`;
+
+                        const shareData = {
+                            title: 'カタン初期配置',
+                            text: text,
+                            files: [file]
+                        };
+
+                        if (navigator.canShare && navigator.canShare(shareData)) {
+                            try {
+                                await navigator.share(shareData);
+                            } catch (err) {
+                                console.log('Share cancelled', err);
+                            }
+                        } else {
+                            // Fallback
+                            const a = document.createElement('a');
+                            a.href = URL.createObjectURL(blob);
+                            a.download = 'catan-setup.png';
+                            a.click();
+                            window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+                        }
+                    }
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
+            };
+            img.src = url;
+
+        } catch (e) {
+            console.error("Share failed", e);
+            alert("シェア画像の生成に失敗しました。");
+        }
     };
 
     // Calculate hex positions for Point-Topped Hexes
@@ -172,7 +247,7 @@ const Board = () => {
             padding: '10px',
             boxSizing: 'border-box'
         }}>
-            <h2 style={{ fontSize: '2rem', color: '#333', marginBottom: '1rem', textShadow: '1px 1px 2px #ccc' }}>カタン 盤面シミュレーター</h2>
+            <h2 style={{ fontSize: '2rem', color: '#f0f0f0', marginBottom: '1rem', textShadow: '1px 1px 2px #000' }}>カタン 盤面シミュレーター</h2>
             <button
                 onClick={handleNewBoard}
                 style={{
@@ -199,6 +274,7 @@ const Board = () => {
                 margin: '0 auto'
             }}>
                 <svg
+                    ref={svgRef}
                     viewBox={`0 0 ${width} ${height}`}
                     style={{
                         width: '100%',
@@ -297,16 +373,62 @@ const Board = () => {
                             cx={centerX + v.x}
                             cy={centerY + v.y}
                             r={8}
-                            fill={tooltipData && tooltipData.intersection.id === v.id ? "#fff" : "rgba(255,255,255,0.2)"}
-                            stroke={tooltipData && tooltipData.intersection.id === v.id ? "#000" : "none"}
-                            strokeWidth={2}
+                            fill={
+                                (selectedIntersection && selectedIntersection.id === v.id) ? "#ffeb3b" :
+                                    (tooltipData && tooltipData.intersection.id === v.id) ? "#fff" : "rgba(255,255,255,0.2)"
+                            }
+                            stroke={
+                                (selectedIntersection && selectedIntersection.id === v.id) ? "#d32f2f" :
+                                    (tooltipData && tooltipData.intersection.id === v.id) ? "#000" : "none"
+                            }
+                            strokeWidth={
+                                (selectedIntersection && selectedIntersection.id === v.id) ? 4 : 2
+                            }
                             style={{ cursor: 'pointer', transition: 'all 0.2s', touchAction: 'none' }}
                             onMouseEnter={(e) => handleMouseEnter(e, v)}
                             onMouseLeave={() => setTooltipData(null)}
+                            onClick={() => handleIntersectionClick(v)}
                             onTouchStart={(e) => handleMouseEnter(e, v)} // Mobile touch support
                         />
                     ))}
                 </svg>
+
+                {/* Selection Action Button (Floating on Mobile/Desktop) */}
+                {selectedIntersection && (
+                    <div style={{
+                        position: 'fixed',
+                        bottom: '30px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 2000,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '10px'
+                    }}>
+                        <button
+                            onClick={shareToX}
+                            style={{
+                                background: '#1DA1F2',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '30px',
+                                padding: '12px 24px',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                            }}
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                            </svg>
+                            選択位置をシェア (X)
+                        </button>
+                    </div>
+                )}
 
                 {/* Tooltip (Fixed/Absolute Positioning) */}
                 {tooltipData && (
