@@ -149,41 +149,29 @@ const Board = () => {
         });
     }, [ports, hexes, hexSize, centerX, centerY]);
 
-    // Mobile Responsiveness
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    // Mobile Responsiveness: Removed manual scale logic in favor of SVG viewBox
 
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    // Tooltip State with Position
+    const [tooltipData, setTooltipData] = useState(null); // { content: intersection, x: 0, y: 0 }
 
-    const scale = windowWidth < 800 ? windowWidth / 840 : 1;
-    const containerStyle = {
-        textAlign: 'center',
-        position: 'relative',
-        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-        width: '100%',
-        overflowX: 'hidden'
-    };
-    const svgStyle = {
-        background: '#4fa4b8',
-        borderRadius: '20px',
-        border: '8px solid #cfaa70',
-        boxShadow: 'inset 0 0 50px rgba(0,0,0,0.2)',
-        transform: `scale(${scale})`,
-        transformOrigin: 'top center',
-        maxWidth: '100%'
-    };
-    const wrapperStyle = {
-        position: 'relative',
-        display: 'inline-block',
-        width: windowWidth < 800 ? '100%' : 'auto',
-        height: windowWidth < 800 ? height * scale : height
+    const handleMouseEnter = (e, intersection) => {
+        const rect = e.target.getBoundingClientRect();
+        // Calculate center of the target element relative to the viewport
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2; // Bottom of element? Or Center. Center is better.
+        setTooltipData({ intersection, x, y });
     };
 
     return (
-        <div style={containerStyle}>
+        <div style={{
+            textAlign: 'center',
+            position: 'relative',
+            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+            width: '100%',
+            overflowX: 'hidden',
+            padding: '10px',
+            boxSizing: 'border-box'
+        }}>
             <h2 style={{ fontSize: '2rem', color: '#333', marginBottom: '1rem', textShadow: '1px 1px 2px #ccc' }}>カタン 盤面シミュレーター</h2>
             <button
                 onClick={handleNewBoard}
@@ -202,8 +190,26 @@ const Board = () => {
             >
                 盤面を生成
             </button>
-            <div style={wrapperStyle}>
-                <svg width={width} height={height} style={svgStyle}>
+
+            {/* SVG Container: width 100%, max-width 800px, aspect-ratio automatic via viewBox */}
+            <div style={{
+                position: 'relative',
+                width: '100%',
+                maxWidth: '800px',
+                margin: '0 auto'
+            }}>
+                <svg
+                    viewBox={`0 0 ${width} ${height}`}
+                    style={{
+                        width: '100%',
+                        height: 'auto',
+                        display: 'block', // prevent inline whitespace
+                        background: '#4fa4b8',
+                        borderRadius: '20px',
+                        border: '8px solid #cfaa70',
+                        boxShadow: 'inset 0 0 50px rgba(0,0,0,0.2)'
+                    }}
+                >
 
                     <defs>
                         <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -291,37 +297,38 @@ const Board = () => {
                             cx={centerX + v.x}
                             cy={centerY + v.y}
                             r={8}
-                            fill={hoveredIntersection && hoveredIntersection.id === v.id ? "#fff" : "rgba(255,255,255,0.2)"}
-                            stroke={hoveredIntersection && hoveredIntersection.id === v.id ? "#000" : "none"}
+                            fill={tooltipData && tooltipData.intersection.id === v.id ? "#fff" : "rgba(255,255,255,0.2)"}
+                            stroke={tooltipData && tooltipData.intersection.id === v.id ? "#000" : "none"}
                             strokeWidth={2}
-                            style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-                            onMouseEnter={() => setHoveredIntersection(v)}
-                            onMouseLeave={() => setHoveredIntersection(null)}
+                            style={{ cursor: 'pointer', transition: 'all 0.2s', touchAction: 'none' }}
+                            onMouseEnter={(e) => handleMouseEnter(e, v)}
+                            onMouseLeave={() => setTooltipData(null)}
+                            onTouchStart={(e) => handleMouseEnter(e, v)} // Mobile touch support
                         />
                     ))}
                 </svg>
 
-                {/* Tooltip */}
-                {hoveredIntersection && (
+                {/* Tooltip (Fixed/Absolute Positioning) */}
+                {tooltipData && (
                     <div style={{
-                        position: 'absolute',
-                        top: centerY + hoveredIntersection.y - 100,
-                        left: centerX + hoveredIntersection.x + 20,
+                        position: 'fixed', // Use fixed to be relative to screen
+                        top: Math.max(10, tooltipData.y - 120), // Prevent off-screen top
+                        left: Math.max(10, Math.min(window.innerWidth - 170, tooltipData.x - 80)), // Centered horizontally, clamped
                         background: 'rgba(255, 255, 255, 0.95)',
                         color: '#333',
                         padding: '12px',
                         borderRadius: '8px',
                         pointerEvents: 'none',
-                        zIndex: 10,
+                        zIndex: 1000,
                         textAlign: 'left',
                         minWidth: '160px',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
                         border: '1px solid #ddd'
                     }}>
                         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                            確率の合計: <span style={{ fontSize: '1.2em', color: '#d32f2f' }}>{hoveredIntersection.totalDots}</span>
+                            確率の合計: <span style={{ fontSize: '1.2em', color: '#d32f2f' }}>{tooltipData.intersection.totalDots}</span>
                         </div>
-                        {Object.entries(hoveredIntersection.resourceCounts).map(([res, count]) => (
+                        {Object.entries(tooltipData.intersection.resourceCounts).map(([res, count]) => (
                             <div key={res} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                 <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: RESOURCE_COLORS[res], border: '1px solid #999' }}></div>
                                 <span style={{ fontSize: '13px' }}>{RESOURCE_NAMES_JP[res]} x{count}</span>
@@ -331,7 +338,7 @@ const Board = () => {
                 )}
             </div>
 
-            <div style={{ marginTop: '30px', background: '#f9f9f9', padding: '20px', borderRadius: '8px', maxWidth: '800px', margin: '30px auto' }}>
+            <div style={{ marginTop: '30px', background: '#f9f9f9', padding: '20px', borderRadius: '8px', maxWidth: '800px', margin: '30px auto', boxSizing: 'border-box' }}>
                 <h3 style={{ margin: '0 0 15px 0' }}>凡例</h3>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', flexWrap: 'wrap' }}>
                     {Object.entries(RESOURCE_COLORS).map(([key, color]) => (
